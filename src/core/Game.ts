@@ -2,13 +2,19 @@
 import * as THREE from 'three';
 import { EngineeringRoom } from '../levels/EngineeringRoom';
 import { PlayerController } from '../player/PlayerController';
+import { PhysicsWorld } from '../physics/PhysicsWorld';
 
 export class Game {
   private scene: THREE.Scene;
   private camera: THREE.PerspectiveCamera;
   private renderer: THREE.WebGLRenderer;
+
+  private physics: PhysicsWorld;
   private player: PlayerController;
+
   private clock = new THREE.Clock();
+  private accumulator = 0;
+  private readonly fixedStep = 1 / 60;
 
   constructor() {
     this.scene = new THREE.Scene();
@@ -30,27 +36,36 @@ export class Game {
     this.renderer.setPixelRatio(
       Math.min(window.devicePixelRatio, 2)
     );
+
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
 
     document.body.appendChild(this.renderer.domElement);
 
-    const ambient = new THREE.AmbientLight(0x64748b, 0.35);
-    this.scene.add(ambient);
+    this.scene.add(
+      new THREE.AmbientLight(0x64748b, 0.35)
+    );
 
     const room = new EngineeringRoom();
     this.scene.add(room.group);
 
+    this.physics = new PhysicsWorld();
+    this.physics.addEnvironment(room.group);
+
     this.player = new PlayerController(
       this.camera,
       this.scene,
-      this.renderer.domElement
+      this.renderer.domElement,
+      this.physics
     );
+
+    this.player.syncCamera();
 
     window.addEventListener('resize', () => {
       this.camera.aspect =
         window.innerWidth / window.innerHeight;
+
       this.camera.updateProjectionMatrix();
 
       this.renderer.setSize(
@@ -65,10 +80,17 @@ export class Game {
   private animate = () => {
     requestAnimationFrame(this.animate);
 
-    const delta = this.clock.getDelta();
+    const delta = Math.min(this.clock.getDelta(), 0.1);
+    this.accumulator += delta;
 
-    this.player.update(delta);
+    while (this.accumulator >= this.fixedStep) {
+      this.player.update(this.fixedStep);
+      this.physics.world.timestep = this.fixedStep;
+      this.physics.world.step();
+      this.accumulator -= this.fixedStep;
+    }
 
+    this.player.syncCamera(delta);
     this.renderer.render(this.scene, this.camera);
   };
 }
