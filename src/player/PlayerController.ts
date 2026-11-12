@@ -3,13 +3,18 @@ import * as THREE from 'three';
 import * as RAPIER from '@dimforge/rapier3d-compat';
 import { PhysicsWorld } from '../physics/PhysicsWorld';
 
+import { GravityHUD } from '../ui/GravityHUD';
+import { GravityTarget } from '../effects/GravityTarget';
+
 export class PlayerController {
   public camera: THREE.PerspectiveCamera;
   public flashlight: THREE.SpotLight;
 
   private physics: PhysicsWorld;
-  private scene: THREE.Scene;
   private canvas: HTMLCanvasElement;
+
+  private hud: GravityHUD;
+  private gravityTarget: GravityTarget; 
 
   private keys = new Set<string>();
 
@@ -30,18 +35,21 @@ export class PlayerController {
 
   private body: RAPIER.RigidBody;
   private collider: RAPIER.Collider;
-  private raycaster = new THREE.Raycaster();
 
   constructor(
     camera: THREE.PerspectiveCamera,
     scene: THREE.Scene,
     canvas: HTMLCanvasElement,
-    physics: PhysicsWorld
+    physics: PhysicsWorld,
+    hud: GravityHUD,
+    gravityTarget: GravityTarget
   ) {
     this.camera = camera;
-    this.scene = scene;
     this.canvas = canvas;
     this.physics = physics;
+
+    this.hud = hud;
+    this.gravityTarget = gravityTarget;
 
     this.body = physics.world.createRigidBody(
       RAPIER.RigidBodyDesc.kinematicPositionBased()
@@ -53,19 +61,30 @@ export class PlayerController {
       this.body
     );
 
-    this.flashlight = new THREE.SpotLight(
-      0xffffff, 35, 22, Math.PI / 7, 0.45, 1.3
-    );
+    
+this.flashlight = new THREE.SpotLight(
+  0xf2f7ff,       // Neutral white with a slight blue tint
+  105,            // Lower peak intensity
+  48,             // Longer range
+  Math.PI / 3.8,  // Wider beam
+  0.85,           // Softer edges
+  1.0             // More gradual falloff
+);
 
-    this.flashlight.visible = false;
-    this.flashlight.position.set(0, -0.12, 0);
-    this.flashlight.target.position.set(0, -0.12, -5);
+this.flashlight.castShadow = true;
+this.flashlight.shadow.mapSize.set(1024, 1024);
+this.flashlight.shadow.bias = -0.00015;
+this.flashlight.shadow.camera.near = 0.1;
+this.flashlight.shadow.camera.far = 48;
+
+this.flashlight.position.set(0.12, -0.15, -0.1);
+this.flashlight.target.position.set(0, -0.1, -12);
+
 
     camera.add(this.flashlight);
     camera.add(this.flashlight.target);
     scene.add(camera);
 
-    this.raycaster.far = 25;
 
     this.physics.setUpDirection(this.up);
     this.updateTargetRotation();
@@ -141,115 +160,76 @@ export class PlayerController {
       .multiply(pitchRotation);
   }
 
-  private shiftGravity() {
-    this.raycaster.setFromCamera(
-      new THREE.Vector2(0, 0),
-      this.camera
-    );
+  
+private shiftGravity() {
+  // Refresh targeting immediately when G is pressed.
+  this.gravityTarget.update(this.camera);
 
-    const targets: THREE.Object3D[] = [];
+  const hit = this.gravityTarget.getHit();
 
-    this.scene.traverse((object) => {
-      if (
-        object instanceof THREE.Mesh &&
-        object.visible
-      ) {
-        targets.push(object);
-      }
-    });
+  if (!hit) return;
 
-    const hits = this.raycaster.intersectObjects(targets, false);
+  const axis = hit.normal.clone();
 
-    if (hits.length === 0) return;
+  // Ignore a surface with the same gravity orientation.
+  if (axis.dot(this.up) > 0.99) return;
 
-    const hit = hits[0];
-    if (!hit.face) return;
+  const forward = new THREE.Vector3(0, 0, -1)
+    .applyQuaternion(this.camera.quaternion);
 
-    const normalMatrix = new THREE.Matrix3()
-      .getNormalMatrix(hit.object.matrixWorld);
+  let projectedForward = forward.clone()
+    .addScaledVector(axis, -forward.dot(axis));
 
-    const normal = hit.face.normal.clone()
-      .applyMatrix3(normalMatrix)
-      .normalize();
-
-    // Snap to the closest room axis.
-    const axis = new THREE.Vector3();
-
-    const values = [
-      Math.abs(normal.x),
-      Math.abs(normal.y),
-      Math.abs(normal.z),
-    ];
-
-    const largest = values.indexOf(Math.max(...values));
-
-    if (largest === 0) axis.x = Math.sign(normal.x);
-    if (largest === 1) axis.y = Math.sign(normal.y);
-    if (largest === 2) axis.z = Math.sign(normal.z);
-
-    // Do not reset movement when selecting the current surface.
-    if (axis.dot(this.up) > 0.99) return;
-
-    // Preserve the camera's current viewing direction
-    // as closely as possible after changing gravity.
-    const forward = new THREE.Vector3(0, 0, -1)
+  if (projectedForward.lengthSq() < 0.001) {
+    const right = new THREE.Vector3(1, 0, 0)
       .applyQuaternion(this.camera.quaternion);
 
-    let projectedForward = forward.clone()
-      .addScaledVector(axis, -forward.dot(axis));
-
-    if (projectedForward.lengthSq() < 0.001) {
-      const right = new THREE.Vector3(1, 0, 0)
-        .applyQuaternion(this.camera.quaternion);
-
-      projectedForward = right.cross(axis);
-    }
-
-    projectedForward.normalize();
-
-    const right = projectedForward.clone()
-      .cross(axis)
-      .normalize();
-
-    const backward = projectedForward.clone().negate();
-
-    const rotationMatrix = new THREE.Matrix4()
-      .makeBasis(right, axis, backward);
-
-    this.frame.setFromRotationMatrix(rotationMatrix);
-
-    this.up.copy(axis);
-    this.gravity.copy(axis).negate();
-
-    this.yaw = 0;
-    this.pitch = 0;
-    this.verticalSpeed = 0;
-    this.grounded = false;
-
-    this.physics.setUpDirection(this.up);
-
-    // A capsule is aligned to local Y, so rotate its
-    // collider to match the new standing direction.
-    const capsuleRotation = new THREE.Quaternion()
-      .setFromUnitVectors(
-        new THREE.Vector3(0, 1, 0),
-        this.up
-      );
-
-    this.collider.setRotation({
-      x: capsuleRotation.x,
-      y: capsuleRotation.y,
-      z: capsuleRotation.z,
-      w: capsuleRotation.w,
-    });
-
-    this.updateTargetRotation();
-
-    console.log(
-      'Gravity shifted:',
-      this.gravity.toArray()
-    );
+    projectedForward = right.cross(axis);
   }
+
+  projectedForward.normalize();
+
+  const right = projectedForward.clone()
+    .cross(axis)
+    .normalize();
+
+  const backward = projectedForward.clone().negate();
+
+  const rotationMatrix = new THREE.Matrix4()
+    .makeBasis(right, axis, backward);
+
+  this.frame.setFromRotationMatrix(rotationMatrix);
+
+  this.up.copy(axis);
+  this.gravity.copy(axis).negate();
+
+  this.yaw = 0;
+  this.pitch = 0;
+  this.verticalSpeed = 0;
+  this.grounded = false;
+
+  this.physics.setUpDirection(this.up);
+
+  const capsuleRotation = new THREE.Quaternion()
+    .setFromUnitVectors(
+      new THREE.Vector3(0, 1, 0),
+      this.up
+    );
+
+  this.collider.setRotation({
+    x: capsuleRotation.x,
+    y: capsuleRotation.y,
+    z: capsuleRotation.z,
+    w: capsuleRotation.w,
+  });
+
+  this.updateTargetRotation();
+
+  // Update the interface and play the visual pulse.
+  this.hud.setGravity(this.up);
+  this.hud.triggerShift();
+}
+
 
   update(delta: number) {
     const dt = Math.min(delta, 0.05);

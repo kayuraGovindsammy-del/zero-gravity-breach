@@ -67,7 +67,7 @@ export class PhysicsWorld {
     group.updateWorldMatrix(true, true);
 
     group.traverse((object) => {
-      if (object instanceof THREE.Mesh) {
+      if (object instanceof THREE.Mesh && object.userData.solid === true) {
         this.addStaticBox(object);
       }
     });

@@ -29,3 +29,116 @@ body::after {
   pointer-events: none;
   text-shadow: 0 0 8px #00c8ff;
 }
+
+
+.gravity-hud {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 10;
+  font-family: 'Consolas', monospace;
+  color: #9eefff;
+}
+
+.gravity-reticle {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 26px;
+  height: 26px;
+  transform: translate(-50%, -50%);
+  border: 1px solid rgba(155, 210, 230, 0.5);
+  border-radius: 50%;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.reticle-dot {
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  background: #c8e6f0;
+  border-radius: 50%;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.gravity-reticle.valid {
+  border-color: #00e5ff;
+  box-shadow: 0 0 12px rgba(0, 229, 255, 0.8);
+}
+
+.gravity-reticle.valid .reticle-dot {
+  background: #00e5ff;
+}
+
+.gravity-status {
+  position: absolute;
+  left: 50%;
+  top: calc(50% + 38px);
+  transform: translateX(-50%);
+  text-align: center;
+  min-width: 230px;
+}
+
+.hud-label {
+  font-size: 10px;
+  letter-spacing: 2px;
+  opacity: 0.65;
+}
+
+.hud-target {
+  font-size: 13px;
+  font-weight: bold;
+  margin-top: 7px;
+  letter-spacing: 1px;
+}
+
+.hud-hint {
+  font-size: 10px;
+  opacity: 0.6;
+  margin-top: 6px;
+}
+
+.gravity-direction {
+  position: absolute;
+  bottom: 35px;
+  left: 35px;
+  padding: 14px 18px;
+  background: rgba(3, 20, 34, 0.75);
+  border-left: 3px solid #00d9ff;
+  box-shadow: 0 0 18px rgba(0, 200, 255, 0.12);
+}
+
+.hud-vector {
+  font-size: 15px;
+  font-weight: bold;
+  letter-spacing: 1px;
+  margin-top: 8px;
+}
+
+.gravity-pulse {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    circle,
+    transparent 30%,
+    rgba(0, 210, 255, 0.35) 100%
+  );
+  opacity: 0;
+}
+
+.gravity-pulse.active {
+  animation: gravity-shift-pulse 0.65s ease-out;
+}
+
+@keyframes gravity-shift-pulse {
+  0% {
+    opacity: 0.9;
+  }
+
+  100% {
+    opacity: 0;
+  }
+}
+
